@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Hand Mage</title>
+<meta name="description" content="ร่ายเวทด้วยมือจริงผ่านกล้อง: หงายมือชาร์จลูกไฟ ผลักมือเพื่อยิงใส่จอมเวทศัตรู">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Kanit:wght@300;400;600&display=swap">
+<style>
+/* Layout: one full-bleed 3D arena; thin HUD strips pinned to the safe-area edges; menus are a single centred scroll of parchment-dark glass. */
+:root{
+  --night:#0d0a18;      /* arena ground & page */
+  --ink:#f3ecff;        /* primary text */
+  --mist:#b9add6;       /* secondary text */
+  --ember:#ff8a3d;      /* player fire / primary action */
+  --hex:#e04bff;        /* enemy magic */
+  --ward:#5fe3ff;       /* shield + player hands */
+  --glass:rgba(22,16,40,.72);
+  --line:rgba(185,173,214,.22);
+  --display:"Cinzel","Times New Roman",serif;
+  --body:"Kanit","Noto Sans Thai","Leelawadee UI",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--night);color:var(--ink);font-family:var(--body);-webkit-user-select:none;user-select:none;touch-action:none}
+#game{position:fixed;inset:0;width:100%;height:100%;display:block}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+button:focus-visible{outline:2px solid var(--ward);outline-offset:3px}
+
+/* ---------- HUD ---------- */
+.hud{position:fixed;left:0;right:0;pointer-events:none;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding-inline:max(16px,env(safe-area-inset-left,0px))}
+.hud.top{top:0;padding-top:calc(env(safe-area-inset-top,0px) + 12px)}
+.hud.bottom{bottom:0;align-items:flex-end;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 12px)}
+.hud .side{display:flex;gap:8px;align-items:center;pointer-events:auto;flex:1}
+.hud .side.r{justify-content:flex-end}
+.bar-wrap{flex:0 1 420px;min-width:0;text-align:center}
+.bar-label{font-family:var(--display);font-weight:600;letter-spacing:.12em;font-size:.78rem;text-transform:uppercase;color:var(--mist);display:flex;justify-content:space-between;gap:8px}
+.bar-label b{font-family:var(--body);font-weight:400;letter-spacing:0;color:var(--ink);font-variant-numeric:tabular-nums}
+.bar{height:10px;border-radius:2px;background:rgba(255,255,255,.08);border:1px solid var(--line);overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;width:100%;transform-origin:left;transition:transform .25s ease-out}
+#enemyBar i{background:linear-gradient(90deg,#7a1fa8,var(--hex))}
+#playerBar i{background:linear-gradient(90deg,#1f7fa8,var(--ward))}
+.chip{background:var(--glass);border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:.78rem;color:var(--mist);white-space:nowrap;backdrop-filter:blur(6px)}
+.chip.ok{color:var(--ward)}
+.chip.warn{color:#ffc56b}
+.icon-btn{background:var(--glass);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:.78rem;color:var(--mist);backdrop-filter:blur(6px)}
+.icon-btn[aria-pressed="true"]{color:var(--ward);border-color:var(--ward)}
+#handInfo{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:8px}
+#handInfo .chip{font-variant-numeric:tabular-nums}
+#hint{font-size:.74rem;color:var(--mist);margin-top:6px;opacity:.85}
+
+#camPreview{position:fixed;right:max(16px,env(safe-area-inset-right,0px));top:calc(env(safe-area-inset-top,0px) + 56px);width:min(28vw,180px);aspect-ratio:4/3;border-radius:10px;border:1px solid var(--line);overflow:hidden;background:#000;max-width:100%}
+#camPreview video,#camPreview canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+
+#shieldBtn{position:fixed;left:max(16px,env(safe-area-inset-left,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 70px);width:76px;height:76px;border-radius:50%;background:radial-gradient(circle,rgba(95,227,255,.25),rgba(95,227,255,.05));border:2px solid var(--ward);color:var(--ward);font-weight:600;font-size:.85rem}
+#vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 45%,rgba(255,30,60,.55) 100%);opacity:0;transition:opacity .35s}
+.dmg{position:fixed;font-family:var(--display);font-weight:800;font-size:1.6rem;color:#ffd8a8;text-shadow:0 0 12px var(--ember);pointer-events:none;transform:translate(-50%,-50%);animation:rise .9s ease-out forwards}
+@keyframes rise{to{transform:translate(-50%,-160%);opacity:0}}
+
+/* ---------- Menus ---------- */
+.overlay{position:fixed;inset:0;display:grid;place-items:center;padding-inline:16px;padding-block:calc(env(safe-area-inset-top,0px) + 16px) calc(env(safe-area-inset-bottom,0px) + 16px);background:radial-gradient(ellipse at 50% 30%,rgba(13,10,24,.35),rgba(13,10,24,.88));overflow-y:auto}
+.panel{width:100%;max-width:560px;display:grid;gap:18px;text-align:center}
+.title{font-family:var(--display);font-weight:800;font-size:clamp(2.6rem,10vw,4.4rem);letter-spacing:.08em;line-height:1;margin:0;background:linear-gradient(180deg,#fff2d6,var(--ember) 70%,#b23a10);-webkit-background-clip:text;background-clip:text;color:transparent;text-wrap:balance}
+.lede{margin:0;color:var(--mist);font-weight:300;font-size:1.02rem;line-height:1.6}
+.spells{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.spell{background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:12px 8px;display:grid;gap:4px;justify-items:center;min-width:0}
+.spell svg{width:44px;height:44px}
+.spell strong{font-weight:600;font-size:.92rem}
+.spell span{font-size:.76rem;color:var(--mist);line-height:1.35}
+.actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.btn{padding:12px 22px;border-radius:10px;font-weight:600;font-size:1rem}
+.btn.primary{background:linear-gradient(180deg,#ffa25e,#e2621f);color:#1a0b02;box-shadow:0 6px 24px rgba(255,138,61,.35)}
+.btn.ghost{border:1px solid var(--line);color:var(--ink);background:var(--glass)}
+.tips{font-size:.8rem;color:var(--mist);line-height:1.6;margin:0}
+.status{font-size:.9rem;color:#ffc56b;min-height:1.2em;margin:0}
+.result{font-family:var(--display);font-size:clamp(2.2rem,9vw,3.4rem);margin:0;letter-spacing:.06em}
+.result.win{color:var(--ember)}
+.result.lose{color:var(--hex)}
+.stats{display:flex;justify-content:center;gap:22px;color:var(--mist);font-size:.9rem;font-variant-numeric:tabular-nums}
+.stats b{display:block;color:var(--ink);font-size:1.3rem}
+@media (max-width:420px){.spells{grid-template-columns:1fr}.spell{grid-template-columns:44px 1fr;text-align:left;justify-items:start;align-items:center;column-gap:10px}.spell svg{grid-row:span 2}}
+@media (prefers-reduced-motion:reduce){.dmg{animation-duration:.01s}.bar i{transition:none}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="vignette"></div>
+
+<div class="hud top" id="hudTop" hidden>
+  <div class="side"><span class="chip" id="trackChip">กำลังเริ่ม…</span></div>
+  <div class="bar-wrap">
+    <div class="bar-label"><span>จอมเวทเงา</span><b id="enemyHpText">100</b></div>
+    <div class="bar" id="enemyBar"><i></i></div>
+  </div>
+  <div class="side r">
+    <button class="icon-btn" id="camBtn" aria-pressed="true">กล้อง</button>
+    <button class="icon-btn" id="muteBtn" aria-pressed="false">เสียง</button>
+  </div>
+</div>
+
+<div class="hud bottom" id="hudBottom" hidden>
+  <div class="side"></div>
+  <div class="bar-wrap">
+    <div id="handInfo"></div>
+    <div class="bar-label"><span>พลังชีวิต</span><b id="playerHpText">100</b></div>
+    <div class="bar" id="playerBar"><i></i></div>
+    <div id="hint">หงายมือ = ชาร์จลูกไฟ · ผลักมือตั้งไปข้างหน้า = ยิง · ผลักสองมือ = โล่</div>
+  </div>
+  <div class="side r"></div>
+</div>
+
+<div id="camPreview" hidden><video id="video" playsinline muted></video><canvas id="camDots"></canvas></div>
+<button id="shieldBtn" hidden>โล่</button>
+
+<div class="overlay" id="menu">
+  <div class="panel">
+    <h1 class="title">HAND MAGE</h1>
+    <p class="lede">ยกมือขึ้นหน้ากล้อง ร่ายลูกไฟด้วยมือจริง แล้วผลักใส่จอมเวทเงาให้ล้มก่อนที่เขาจะล้มคุณ</p>
+    <div class="spells">
+      <div class="spell">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#5fe3ff" stroke-width="2.2" stroke-linecap="round"><path d="M6 32c6 4 30 4 36 0"/><path d="M10 31l-2-5M17 33l-1-6M24 34v-6M31 33l1-6M38 31l2-5"/><circle cx="24" cy="16" r="6" fill="#ff8a3d" stroke="#ffc58f"/></svg>
+        <strong>ชาร์จ</strong><span>หงายฝ่ามือแนวนอน ค้างไว้ ลูกไฟจะโตขึ้น</span>
+      </div>
+      <div class="spell">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#5fe3ff" stroke-width="2.2" stroke-linecap="round"><path d="M14 40V20M20 40V10M26 40V8M32 40V12M38 40V22"/><path d="M14 40h24"/><path d="M6 24h4M4 30h6" stroke="#ff8a3d"/></svg>
+        <strong>ยิง</strong><span>ตั้งฝ่ามือหันออก แล้วผลักไปทางศัตรู</span>
+      </div>
+      <div class="spell">
+        <svg viewBox="0 0 48 48" fill="none" stroke="#5fe3ff" stroke-width="2.2" stroke-linecap="round"><path d="M24 6l15 6v11c0 10-7 16-15 19C16 39 9 33 9 23V12z"/><path d="M18 24l4 4 8-9"/></svg>
+        <strong>โล่</strong><span>ผลักสองมือพร้อมกันโดยไม่ได้ชาร์จ</span>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="startCam">เริ่มด้วยกล้อง</button>
+      <button class="btn ghost" id="startTouch">เล่นแบบแตะจอ</button>
+    </div>
+    <p class="status" id="menuStatus"></p>
+    <p class="tips">ตั้งมือถือแนวนอนห่างตัวประมาณ 1 เมตร ให้กล้องหน้าเห็นมือทั้งสองข้าง และเปิดไฟให้สว่าง<br>ภาพจากกล้องประมวลผลในเครื่องคุณเท่านั้น ไม่ถูกส่งไปที่ไหน</p>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="panel">
+    <p class="result" id="resultText">ชนะ</p>
+    <div class="stats">
+      <div><b id="statTime">0:00</b>เวลา</div>
+      <div><b id="statHits">0</b>ลูกไฟที่โดน</div>
+      <div><b id="statBlocks">0</b>บล็อกได้</div>
+    </div>
+    <div class="actions"><button class="btn primary" id="again">เล่นอีกครั้ง</button><button class="btn ghost" id="toMenu">เมนู</button></div>
+  </div>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+
+const MP_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/';
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => a + Math.random() * (b - a);
+
+// ======================================================================
+// Renderer, scene, arena
+// ======================================================================
+const renderer = new THREE.WebGLRenderer({ canvas: $('game'), antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x1b1030, 0.028);
+const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 200);
+const CAM_BASE = new THREE.Vector3(0, 1.6, 0);
+camera.position.copy(CAM_BASE);
+camera.lookAt(0, 1.45, -20);
+scene.add(camera);
+
+// sky dome: indigo zenith to ember horizon
+{
+  const g = new THREE.SphereGeometry(120, 32, 16);
+  const m = new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false,
+    uniforms: { top: { value: new THREE.Color(0x0b0820) }, mid: { value: new THREE.Color(0x3a1747) }, low: { value: new THREE.Color(0xc4502a) } },
+    vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+    fragmentShader: 'uniform vec3 top; uniform vec3 mid; uniform vec3 low; varying vec3 vP; void main(){ float h = vP.y; vec3 c = h > 0.08 ? mix(mid, top, smoothstep(0.08, 0.6, h)) : mix(low, mid, smoothstep(-0.05, 0.08, h)); gl_FragColor = vec4(c,1.0); }'
+  });
+  scene.add(new THREE.Mesh(g, m));
+}
+scene.add(new THREE.HemisphereLight(0x8a7cff, 0x2a120a, 0.75));
+const sun = new THREE.DirectionalLight(0xffa36b, 1.1);
+sun.position.set(-6, 8, -30);
+scene.add(sun);
+
+// ground + rune circle under the enemy
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), new THREE.MeshStandardMaterial({ color: 0x241a33, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+const ENEMY_Z = -22;
+function runeTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 512;
+  const x = c.getContext('2d');
+  x.translate(256, 256); x.strokeStyle = '#ff6ad5'; x.lineWidth = 6;
+  x.beginPath(); x.arc(0, 0, 240, 0, Math.PI * 2); x.stroke();
+  x.lineWidth = 3; x.beginPath(); x.arc(0, 0, 200, 0, Math.PI * 2); x.stroke();
+  x.beginPath();
+  for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; x.lineTo(Math.cos(a) * 200, Math.sin(a) * 200); }
+  x.closePath(); x.stroke();
+  x.font = 'bold 28px serif'; x.fillStyle = '#ff6ad5';
+  const glyphs = 'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒ';
+  for (let i = 0; i < 18; i++) { x.save(); x.rotate(i / 18 * Math.PI * 2); x.fillText(glyphs[i], -8, -212); x.restore(); }
+  return new THREE.CanvasTexture(c);
+}
+const rune = new THREE.Mesh(new THREE.PlaneGeometry(9, 9), new THREE.MeshBasicMaterial({ map: runeTexture(), transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+rune.rotation.x = -Math.PI / 2; rune.position.set(0, 0.02, ENEMY_Z);
+scene.add(rune);
+
+// broken pillars for depth
+{
+  const mat = new THREE.MeshStandardMaterial({ color: 0x3b2f4d, roughness: 0.9 });
+  const spots = [[-9, -8], [9, -10], [-11, -18], [11, -20], [-8, -30], [8, -32], [-14, -40], [14, -42], [-5, -45], [5, -48]];
+  spots.forEach(([x, z], i) => {
+    const h = 2 + (i * 37 % 5);
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.7, h, 8), mat);
+    p.position.set(x, h / 2, z); p.rotation.y = i;
+    scene.add(p);
+  });
+}
+
+// glow sprite texture shared by every light effect
+const glowTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.25, 'rgba(255,255,255,.75)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const glow = (color, scale) => {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+  s.scale.setScalar(scale);
+  return s;
+};
+
+// drifting embers
+const embers = (() => {
+  const n = 260, pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { pos[i * 3] = rand(-20, 20); pos[i * 3 + 1] = rand(0, 10); pos[i * 3 + 2] = rand(-50, 2); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const p = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xff9a55, size: 0.08, map: glowTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  scene.add(p);
+  return p;
+})();
+
+// ======================================================================
+// Particles (pooled sprites)
+// ======================================================================
+const particles = [];
+function spark(pos, color, opts = {}) {
+  const s = glow(color, opts.size ?? 0.25);
+  s.position.copy(pos);
+  scene.add(s);
+  particles.push({ s, v: opts.v ?? new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).multiplyScalar(opts.speed ?? 2), life: opts.life ?? 0.6, max: opts.life ?? 0.6, size: opts.size ?? 0.25, grow: opts.grow ?? 0 });
+}
+function burst(pos, color, n, speed, size) {
+  for (let i = 0; i < n; i++) spark(pos, color, { speed: speed * rand(0.4, 1), size: size * rand(0.5, 1.2), life: rand(0.35, 0.8) });
+}
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt;
+    if (p.life <= 0) { scene.remove(p.s); p.s.material.dispose(); particles.splice(i, 1); continue; }
+    p.s.position.addScaledVector(p.v, dt);
+    p.v.multiplyScalar(1 - dt * 2.5);
+    const k = p.life / p.max;
+    p.s.material.opacity = k;
+    p.s.scale.setScalar(p.size * (1 + p.grow * (1 - k)));
+  }
+}
+
+// ======================================================================
+// Enemy: the shadow mage
+// ======================================================================
+const enemy = (() => {
+  const g = new THREE.Group();
+  const robeMat = new THREE.MeshStandardMaterial({ color: 0x2b1640, roughness: 0.8, emissive: 0x000000 });
+  const robe = new THREE.Mesh(new THREE.ConeGeometry(0.75, 2.1, 14), robeMat); robe.position.y = 1.05; g.add(robe);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 16, 12), new THREE.MeshStandardMaterial({ color: 0x120a1c })); head.position.y = 2.2; g.add(head);
+  const hood = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.75, 14), robeMat); hood.position.y = 2.42; g.add(hood);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff5ae6 });
+  [-0.09, 0.09].forEach(x => { const e = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), eyeMat); e.position.set(x, 2.22, 0.24); g.add(e); });
+  const eyeGlow = glow(0xff4fe0, 0.6); eyeGlow.position.set(0, 2.22, 0.3); g.add(eyeGlow);
+  const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 2.6, 6), new THREE.MeshStandardMaterial({ color: 0x4a3322 })); staff.position.set(0.7, 1.3, 0.1); g.add(staff);
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 12), new THREE.MeshBasicMaterial({ color: 0xff7af0 })); orb.position.set(0.7, 2.68, 0.1); g.add(orb);
+  const orbGlow = glow(0xe04bff, 1.2); orbGlow.position.copy(orb.position); g.add(orbGlow);
+  const light = new THREE.PointLight(0xe04bff, 2, 8); light.position.copy(orb.position); g.add(light);
+  g.position.set(0, 0, ENEMY_Z);
+  scene.add(g);
+  return { g, robeMat, orb, orbGlow, eyeGlow, light, hp: 100, targetX: 0, moveT: 0, castT: 3, charging: 0, flash: 0, bob: 0 };
+})();
+const enemyChest = () => enemy.g.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+
+// ======================================================================
+// Player hands (spirit hands drawn from tracked landmarks)
+// ======================================================================
+const BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[0,17],[17,18],[18,19],[19,20]];
+const PALM = [0, 1, 5, 9, 13, 17];
+const HAND_D = 0.6; // hands live on a plane this far in front of the camera
+const rig = new THREE.Group(); camera.add(rig);
+const UP = new THREE.Vector3(0, 1, 0);
+
+function makeHand() {
+  const mat = new THREE.MeshBasicMaterial({ color: 0x9ff0ff, transparent: true, opacity: 0.95, depthTest: false });
+  const jointGeo = new THREE.SphereGeometry(1, 8, 6), boneGeo = new THREE.CylinderGeometry(1, 1, 1, 6);
+  const group = new THREE.Group(); group.renderOrder = 10;
+  const joints = Array.from({ length: 21 }, (_, i) => { const m = new THREE.Mesh(jointGeo, mat); m.renderOrder = 10; group.add(m); return m; });
+  const bones = BONES.map(() => { const m = new THREE.Mesh(boneGeo, mat); m.renderOrder = 10; group.add(m); return m; });
+  const palmGeo = new THREE.BufferGeometry();
+  palmGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(PALM.length * 3), 3));
+  palmGeo.setIndex([0,1,2, 0,2,3, 0,3,4, 0,4,5]);
+  const palm = new THREE.Mesh(palmGeo, new THREE.MeshBasicMaterial({ color: 0x5fe3ff, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthTest: false, depthWrite: false }));
+  palm.renderOrder = 9; group.add(palm);
+  const aura = glow(0x5fe3ff, 0.12); aura.material.depthTest = false; aura.renderOrder = 8; group.add(aura);
+  // the fireball that grows on this palm
+  const orbCore = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffe2b0, depthTest: false }));
+  orbCore.renderOrder = 12;
+  const orbGlow = glow(0xff7a2a, 1); orbGlow.material.depthTest = false; orbGlow.renderOrder = 11;
+  const orb = new THREE.Group(); orb.add(orbGlow, orbCore); rig.add(orb);
+  rig.add(group);
+  return {
+    group, joints, bones, palm, aura, mat, orb, orbCore, orbGlow,
+    pts: Array.from({ length: 21 }, () => new THREE.Vector3()), have: false, seen: 0,
+    pose: 'none', poseRaw: 'none', poseFrames: 0, charge: 0, cool: 0, aimX: 0, scale: 0.1
+  };
+}
+const handsVis = [makeHand(), makeHand()];
+const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
+
+function drawHand(h) {
+  h.group.visible = h.have;
+  if (!h.have) return;
+  const r = h.scale;
+  h.joints.forEach((m, i) => { m.position.copy(h.pts[i]); m.scale.setScalar(r * ([4, 8, 12, 16, 20].includes(i) ? 0.075 : 0.06)); });
+  BONES.forEach(([a, b], i) => {
+    const m = h.bones[i];
+    tmpA.subVectors(h.pts[b], h.pts[a]);
+    const len = tmpA.length();
+    m.position.addVectors(h.pts[a], h.pts[b]).multiplyScalar(0.5);
+    m.scale.set(r * 0.035, len, r * 0.035);
+    m.quaternion.setFromUnitVectors(UP, tmpA.normalize());
+  });
+  const arr = h.palm.geometry.attributes.position.array;
+  PALM.forEach((li, k) => { arr[k * 3] = h.pts[li].x; arr[k * 3 + 1] = h.pts[li].y; arr[k * 3 + 2] = h.pts[li].z; });
+  h.palm.geometry.attributes.position.needsUpdate = true;
+  h.palm.geometry.computeBoundingSphere();
+  palmCenter(h, h.aura.position);
+  h.aura.scale.setScalar(r * 2.2);
+}
+function palmCenter(h, out) {
+  out.set(0, 0, 0);
+  for (const i of [0, 5, 9, 13, 17]) out.add(h.pts[i]);
+  return out.multiplyScalar(0.2);
+}
+
+// virtual hands for touch/keyboard mode: right hand, palm away from you, fingers up
+const TEMPLATE = [[0,0],[-.35,.25],[-.6,.5],[-.78,.72],[-.92,.92],[-.3,1],[-.35,1.4],[-.38,1.65],[-.4,1.88],[0,1.05],[0,1.5],[0,1.78],[0,2.02],[.28,.98],[.32,1.38],[.34,1.62],[.36,1.82],[.52,.85],[.62,1.15],[.68,1.35],[.72,1.52]];
+function placeTemplate(h, cx, cy, size, mirror, tilt) {
+  h.have = true; h.scale = size;
+  TEMPLATE.forEach(([x, y], i) => {
+    const xx = (mirror ? -x : x) * size, yy = y * size;
+    const c = Math.cos(tilt), s = Math.sin(tilt);
+    h.pts[i].set(cx + xx * c - yy * s, cy + xx * s + yy * c, -HAND_D);
+  });
+}
+
+// ======================================================================
+// Hand tracking (MediaPipe Hands, runs on-device)
+// ======================================================================
+let mode = 'menu';           // menu | play | over
+let input = 'camera';        // camera | touch
+let tracker = null, tracking = false, busy = false, lastResults = null, lastResultAt = 0;
+const video = $('video');
+
+function loadScript(src) {
+  return new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.crossOrigin = 'anonymous'; s.onload = ok; s.onerror = () => fail(new Error('load ' + src)); document.head.appendChild(s); });
+}
+async function startCamera() {
+  const status = $('menuStatus');
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error('เบราว์เซอร์นี้เปิดกล้องไม่ได้ ต้องเปิดผ่านลิงก์ https');
+  status.textContent = 'กำลังขอใช้กล้อง…';
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } });
+  video.srcObject = stream;
+  await video.play();
+  status.textContent = 'กำลังโหลดตัวจับมือ (ครั้งแรกประมาณ 10 MB)…';
+  if (!window.Hands) await loadScript(MP_BASE + 'hands.js');
+  tracker = new window.Hands({ locateFile: f => MP_BASE + f });
+  tracker.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.55, minTrackingConfidence: 0.5, selfieMode: true });
+  tracker.onResults(r => { lastResults = r; lastResultAt = performance.now(); });
+  await tracker.initialize();
+  tracking = true;
+  trackLoop();
+}
+async function trackLoop() {
+  if (!tracking) return;
+  if (!busy && video.readyState >= 2) {
+    busy = true;
+    try { await tracker.send({ image: video }); } catch (e) { console.warn(e); }
+    busy = false;
+  }
+  requestAnimationFrame(trackLoop);
+}
+
+// Pose from 3D world landmarks. Orientation only, so it works for either hand
+// and doesn't care whether the palm faces up or down.
+function classify(w) {
+  const v = i => new THREE.Vector3(w[i].x, w[i].y, w[i].z);
+  const w0 = v(0);
+  const n = new THREE.Vector3().crossVectors(v(5).sub(w0), v(17).sub(w0)).normalize();
+  const d = v(9).sub(w0).normalize();
+  let ext = 0;
+  [[8, 6], [12, 10], [16, 14], [20, 18]].forEach(([t, p]) => { if (v(t).distanceTo(w0) > v(p).distanceTo(w0) * 1.08) ext++; });
+  const ny = Math.abs(n.y), nz = Math.abs(n.z);
+  if (ny > 0.55 && ext >= 2) return 'charge';
+  if (nz > 0.55 && d.y < -0.45 && ext >= 3) return 'push';
+  return 'idle';
+}
+
+function view() {
+  const h = HAND_D * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  return { h, w: h * camera.aspect };
+}
+
+// Map the tracked hands into first-person spirit hands. The camera may be a metre
+// away, so each hand is re-scaled to a fixed on-screen size and its movement is amplified.
+function updateTrackedHands(dt) {
+  const r = lastResults, fresh = r && performance.now() - lastResultAt < 400;
+  const lms = fresh ? (r.multiHandLandmarks || []) : [];
+  const wls = fresh ? (r.multiHandWorldLandmarks || []) : [];
+  const { h: vh, w: vw } = view();
+  const vidAspect = (video.videoWidth || 16) / (video.videoHeight || 9);
+  // order by screen x so slot 0 is always the hand on the left of the screen
+  const order = lms.map((l, i) => ({ i, x: l[9].x })).sort((a, b) => a.x - b.x);
+  const used = [false, false];
+  order.forEach((o, k) => {
+    const slot = order.length === 1 ? (o.x < 0.5 ? 0 : 1) : k;
+    used[slot] = true;
+    const hv = handsVis[slot], lm = lms[o.i];
+    const c = lm[9];
+    const s = Math.hypot((lm[9].x - lm[0].x) * vidAspect, lm[9].y - lm[0].y); // palm length in frame-height units
+    const gain = clamp(0.28 / Math.max(s, 0.01), 1, 3.2);
+    const target = vh * 2 * 0.17;                 // palm length on screen
+    const k2 = target / Math.max(s, 0.01);        // frame-height units -> rig units
+    const cx = clamp((c.x - 0.5) * vidAspect * 2 * vh * gain, -vw * 0.92, vw * 0.92);
+    const cy = clamp(-(c.y - 0.5) * 2 * vh * gain - vh * 0.15, -vh * 0.95, vh * 0.7);
+    const a = hv.have ? clamp(dt * 18, 0, 1) : 1;
+    hv.scale = lerp(hv.scale, target, a);
+    lm.forEach((p, i) => {
+      tmpB.set(cx + (p.x - c.x) * vidAspect * k2, cy - (p.y - c.y) * k2, -HAND_D - (p.z - c.z) * k2 * 0.6);
+      hv.pts[i].lerp(tmpB, a);
+    });
+    hv.have = true; hv.seen = 0;
+    hv.aimX = clamp(cx / vw, -1, 1);
+    const raw = wls[o.i] ? classify(wls[o.i]) : 'idle';
+    if (raw === hv.poseRaw) hv.poseFrames++; else { hv.poseRaw = raw; hv.poseFrames = 0; }
+    if (hv.poseFrames >= 2) hv.pose = raw;
+  });
+  handsVis.forEach((hv, i) => {
+    if (!used[i]) { hv.seen += dt; if (hv.seen > 0.35) { hv.have = false; hv.pose = 'none'; } }
+  });
+  const n = handsVis.filter(h => h.have).length;
+  const chip = $('trackChip');
+  if (!tracking) { chip.textContent = 'กำลังโหลด…'; chip.className = 'chip warn'; }
+  else if (n === 0) { chip.textContent = 'ไม่เห็นมือ'; chip.className = 'chip warn'; }
+  else { chip.textContent = `เห็นมือ ${n} ข้าง`; chip.className = 'chip ok'; }
+  drawCamDots(lms);
+}
+
+const camDots = $('camDots');
+function drawCamDots(lms) {
+  if ($('camPreview').hidden) return;
+  const cw = camDots.clientWidth, ch = camDots.clientHeight;
+  if (camDots.width !== cw) { camDots.width = cw; camDots.height = ch; }
+  const x = camDots.getContext('2d');
+  x.clearRect(0, 0, cw, ch);
+  x.fillStyle = '#5fe3ff';
+  // landmarks are already mirrored (selfieMode) but the canvas is flipped with the video, so unflip
+  lms.forEach(l => l.forEach(p => { x.beginPath(); x.arc((1 - p.x) * cw, p.y * ch, 2, 0, 7); x.fill(); }));
+}
+
+// touch / keyboard input
+const touch = { charging: false, shield: false, aimX: 0.35 };
+function updateVirtualHands() {
+  const { h: vh, w: vw } = view();
+  const size = vh * 2 * 0.17;
+  const chargingTilt = touch.charging ? -0.35 : 0;
+  placeTemplate(handsVis[1], vw * 0.55, -vh * 0.95, size, false, chargingTilt);
+  placeTemplate(handsVis[0], -vw * 0.55, -vh * 0.95, size, true, touch.shield ? 0.2 : 0.35);
+  handsVis[1].aimX = touch.aimX;
+  handsVis[1].pose = touch.charging ? 'charge' : 'idle';
+  handsVis[0].pose = touch.shield ? 'push' : 'idle';
+  $('trackChip').textContent = 'โหมดแตะจอ'; $('trackChip').className = 'chip';
+}
+
+// ======================================================================
+// Combat
+// ======================================================================
+const player = { hp: 100, shield: 0, shieldOn: false, lastFire: -9, hits: 0, blocks: 0, start: 0, shake: 0 };
+const bolts = []; // {mesh, glow, light, v, owner:'player'|'enemy', size, dmg, trailT}
+
+const shieldMesh = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(128, 128, 40, 128, 128, 128);
+  g.addColorStop(0, 'rgba(95,227,255,0.05)'); g.addColorStop(0.8, 'rgba(95,227,255,0.35)'); g.addColorStop(1, 'rgba(95,227,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+  x.strokeStyle = 'rgba(180,245,255,.6)'; x.lineWidth = 2;
+  for (let r = 0; r < 6; r++) { x.beginPath(); for (let i = 0; i <= 6; i++) { const a = i * Math.PI / 3 + Math.PI / 6; x.lineTo(128 + Math.cos(a) * (30 + r * 17), 128 + Math.sin(a) * (30 + r * 17)); } x.stroke(); }
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false }));
+  m.position.set(0, -0.03, -0.55); m.renderOrder = 7;
+  camera.add(m);
+  return m;
+})();
+
+function makeBolt(pos, color, coreColor, size) {
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(size * 0.45, 14, 10), new THREE.MeshBasicMaterial({ color: coreColor }));
+  const gl = glow(color, size * 3.2); mesh.add(gl);
+  const light = new THREE.PointLight(color, 3, 6); mesh.add(light);
+  mesh.position.copy(pos); scene.add(mesh);
+  return { mesh, gl, light };
+}
+function removeBolt(i) { const b = bolts[i]; scene.remove(b.mesh); b.mesh.geometry.dispose(); bolts.splice(i, 1); }
+
+function firePlayer(hv) {
+  const charge = hv.charge;
+  const start = hv.orb.getWorldPosition(new THREE.Vector3());
+  const size = 0.12 + 0.42 * charge;
+  const b = makeBolt(start, 0xff6a1f, 0xfff0c8, size);
+  const aimTarget = enemyChest();
+  aimTarget.x = lerp(clamp(hv.aimX * 9, -8, 8), enemy.g.position.x, 0.55); // half aim-assist
+  const v = aimTarget.sub(start).normalize().multiplyScalar(24);
+  bolts.push({ ...b, v, owner: 'player', size, dmg: Math.round(6 + 24 * charge), trailT: 0 });
+  hv.charge = 0; hv.cool = 0.35; player.lastFire = clock;
+  sfx.fire(charge);
+  if (Math.random() < 0.3) enemy.targetX = clamp(enemy.g.position.x + (Math.random() < 0.5 ? -3 : 3), -5, 5);
+}
+function fireEnemy() {
+  const start = enemy.orb.getWorldPosition(new THREE.Vector3());
+  const b = makeBolt(start, 0xd23cff, 0xffd6fb, 0.32);
+  const target = camera.position.clone().add(new THREE.Vector3(rand(-0.25, 0.25), rand(-0.3, 0.05), 0));
+  const speed = lerp(10, 15, 1 - enemy.hp / 100);
+  bolts.push({ ...b, v: target.sub(start).normalize().multiplyScalar(speed), owner: 'enemy', size: 0.32, dmg: 12, trailT: 0 });
+  sfx.enemyCast();
+}
+
+function damageNumber(worldPos, text) {
+  const p = worldPos.clone().project(camera);
+  const el = document.createElement('div');
+  el.className = 'dmg'; el.textContent = text;
+  el.style.left = ((p.x + 1) / 2 * innerWidth) + 'px';
+  el.style.top = ((1 - p.y) / 2 * innerHeight) + 'px';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 950);
+}
+function setBars() {
+  $('enemyBar').firstElementChild.style.transform = `scaleX(${enemy.hp / 100})`;
+  $('playerBar').firstElementChild.style.transform = `scaleX(${player.hp / 100})`;
+  $('enemyHpText').textContent = Math.max(0, Math.ceil(enemy.hp));
+  $('playerHpText').textContent = Math.max(0, Math.ceil(player.hp));
+}
+
+function updatePlayer(dt) {
+  const { h: vh } = view();
+  const tracked = handsVis.filter(h => h.have);
+  handsVis.forEach(hv => {
+    hv.cool = Math.max(0, hv.cool - dt);
+    if (!hv.have) { hv.charge = Math.max(0, hv.charge - dt); hv.orb.visible = false; return; }
+    if (hv.pose === 'charge' && hv.cool === 0) hv.charge = Math.min(1, hv.charge + dt / 1.5);
+    else if (hv.pose === 'push' && hv.charge > 0.12 && mode === 'play') firePlayer(hv);
+    else if (hv.pose !== 'charge') hv.charge = Math.max(0, hv.charge - dt * 0.35);
+    // fireball floats just above the palm
+    palmCenter(hv, hv.orb.position);
+    hv.orb.position.y += hv.scale * 0.35 + 0.02 * hv.charge;
+    const r = 0.006 + 0.05 * hv.charge;
+    hv.orb.visible = hv.charge > 0.02;
+    hv.orbCore.scale.setScalar(r * (1 + Math.sin(clock * 30) * 0.06));
+    hv.orbGlow.scale.setScalar(r * 4.5);
+    hv.mat.color.setHex(hv.pose === 'charge' ? 0xffd0a0 : hv.pose === 'push' ? 0xd8fbff : 0x9ff0ff);
+    if (hv.charge > 0.1 && Math.random() < hv.charge * 0.6) {
+      const wp = hv.orb.getWorldPosition(new THREE.Vector3());
+      spark(wp, 0xff8a3d, { size: 0.03 + 0.04 * hv.charge, speed: 0.15, life: 0.4, v: new THREE.Vector3(rand(-.05, .05), rand(.05, .2), rand(-.05, .05)) });
+    }
+  });
+  // shield: both hands pushing with nothing charged
+  const wantShield = input === 'touch' ? touch.shield
+    : tracked.length === 2 && tracked.every(h => h.pose === 'push' && h.charge < 0.12) && clock - player.lastFire > 0.4;
+  player.shieldOn = wantShield;
+  player.shield = lerp(player.shield, wantShield ? 1 : 0, clamp(dt * 12, 0, 1));
+  shieldMesh.material.opacity = player.shield * 0.9;
+  shieldMesh.scale.setScalar(0.9 + player.shield * 0.1 + Math.sin(clock * 6) * 0.01);
+  sfx.hum(Math.max(...handsVis.map(h => h.charge)));
+  renderHandInfo();
+}
+
+function renderHandInfo() {
+  const names = ['มือซ้าย', 'มือขวา'], label = { charge: 'ชาร์จ', push: 'ผลัก', idle: 'พัก', none: '-' };
+  const html = handsVis.map((h, i) => !h.have ? '' : `<span class="chip">${names[i]}: ${label[h.pose]}${h.charge > 0.02 ? ' ' + Math.round(h.charge * 100) + '%' : ''}</span>`).join('');
+  const el = $('handInfo');
+  if (el.innerHTML !== html) el.innerHTML = html;
+}
+
+function updateEnemy(dt) {
+  const e = enemy, rage = 1 - e.hp / 100;
+  e.bob += dt;
+  e.moveT -= dt;
+  if (e.moveT <= 0) { e.targetX = rand(-5, 5); e.moveT = rand(1.4, 3) * (1 - rage * 0.4); }
+  e.g.position.x = lerp(e.g.position.x, e.targetX, clamp(dt * (1.2 + rage * 1.5), 0, 1));
+  e.g.position.y = Math.sin(e.bob * 2) * 0.08;
+  e.g.rotation.y = Math.sin(e.bob * 0.7) * 0.15;
+  rune.position.x = e.g.position.x;
+  rune.rotation.z += dt * 0.3;
+  if (mode === 'play') {
+    if (e.charging > 0) {
+      e.charging += dt;
+      const k = Math.min(1, e.charging / 0.9);
+      e.orb.scale.setScalar(1 + k * 1.4);
+      e.orbGlow.scale.setScalar(1.2 + k * 2.2);
+      e.light.intensity = 2 + k * 6;
+      if (e.charging >= 0.9) { fireEnemy(); e.charging = 0; e.castT = rand(2.6, 4.4) * (1 - rage * 0.45); }
+    } else {
+      e.castT -= dt;
+      if (e.castT <= 0) e.charging = 0.001;
+      e.orb.scale.setScalar(lerp(e.orb.scale.x, 1, dt * 5));
+      e.orbGlow.scale.setScalar(lerp(e.orbGlow.scale.x, 1.2, dt * 5));
+      e.light.intensity = lerp(e.light.intensity, 2, dt * 5);
+    }
+  }
+  e.flash = Math.max(0, e.flash - dt * 3);
+  e.robeMat.emissive.setRGB(e.flash, e.flash * 0.3, 0);
+  e.eyeGlow.scale.setScalar(0.6 + Math.sin(clock * 5) * 0.08 + (e.charging > 0 ? 0.5 : 0));
+}
+
+function explode(pos, color, size) { burst(pos, color, 18, 6 * size + 2, 0.5 * size + 0.2); burst(pos, 0xffffff, 6, 3, 0.25); }
+
+function updateBolts(dt) {
+  const chest = enemyChest();
+  for (let i = bolts.length - 1; i >= 0; i--) {
+    const b = bolts[i];
+    if (b.owner === 'player') {
+      // gentle homing so a well-aimed push lands
+      const want = chest.clone().sub(b.mesh.position).normalize().multiplyScalar(b.v.length());
+      b.v.lerp(want, clamp(dt * 1.2, 0, 1));
+    }
+    b.mesh.position.addScaledVector(b.v, dt);
+    b.mesh.rotation.y += dt * 8;
+    b.trailT -= dt;
+    if (b.trailT <= 0) { b.trailT = 0.02; spark(b.mesh.position, b.owner === 'player' ? 0xff7a2a : 0xc040ff, { size: b.size * 1.4, speed: 0.3, life: 0.35 }); }
+    let gone = false;
+    if (b.owner === 'player') {
+      // fireball vs incoming hex bolt
+      for (let j = bolts.length - 1; j >= 0; j--) {
+        const o = bolts[j];
+        if (o.owner === 'enemy' && o.mesh.position.distanceTo(b.mesh.position) < (o.size + b.size) * 0.9) {
+          explode(o.mesh.position, 0xffb0ff, 1);
+          sfx.boom(0.5);
+          player.blocks++;
+          removeBolt(j);
+          if (j < i) i--;
+          break;
+        }
+      }
+      if (b.mesh.position.distanceTo(chest) < 0.9 + b.size * 0.5 && mode === 'play') {
+        enemy.hp = Math.max(0, enemy.hp - b.dmg);
+        enemy.flash = 1;
+        player.hits++;
+        explode(b.mesh.position, 0xff8a3d, b.size * 2);
+        damageNumber(b.mesh.position, b.dmg);
+        sfx.boom(0.6 + b.size);
+        gone = true;
+        if (enemy.hp <= 0) endGame(true);
+      } else if (b.mesh.position.z < ENEMY_Z - 8 || Math.abs(b.mesh.position.x) > 30) gone = true;
+    } else {
+      if (b.mesh.position.distanceTo(camera.position) < 0.9) {
+        if (player.shieldOn) { player.blocks++; explode(b.mesh.position, 0x5fe3ff, 0.8); sfx.block(); }
+        else if (mode === 'play') {
+          player.hp = Math.max(0, player.hp - b.dmg);
+          player.shake = 0.35;
+          $('vignette').style.opacity = 1;
+          setTimeout(() => $('vignette').style.opacity = 0, 180);
+          sfx.hurt();
+          if (player.hp <= 0) endGame(false);
+        }
+        gone = true;
+      } else if (b.mesh.position.z > 3) gone = true;
+    }
+    if (gone) removeBolt(i);
+  }
+  setBars();
+}
+
+// ======================================================================
+// Sound (tiny WebAudio synth, starts on the first button press)
+// ======================================================================
+const sfx = (() => {
+  let ctx = null, muted = false, humOsc = null, humGain = null, noiseBuf = null;
+  const out = () => ctx && !muted;
+  function ensure() {
+    if (ctx) return;
+    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
+    noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    humOsc = ctx.createOscillator(); humOsc.type = 'sawtooth'; humOsc.frequency.value = 70;
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 400;
+    humGain = ctx.createGain(); humGain.gain.value = 0;
+    humOsc.connect(f).connect(humGain).connect(ctx.destination); humOsc.start();
+  }
+  function noise(dur, from, to, vol, type = 'lowpass') {
+    if (!out()) return;
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(from, ctx.currentTime); f.frequency.exponentialRampToValueAtTime(to, ctx.currentTime + dur);
+    const g = ctx.createGain(); g.gain.setValueAtTime(vol, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    s.connect(f).connect(g).connect(ctx.destination); s.start(); s.stop(ctx.currentTime + dur);
+  }
+  function tone(dur, from, to, vol, type = 'sine') {
+    if (!out()) return;
+    const o = ctx.createOscillator(); o.type = type;
+    o.frequency.setValueAtTime(from, ctx.currentTime); o.frequency.exponentialRampToValueAtTime(to, ctx.currentTime + dur);
+    const g = ctx.createGain(); g.gain.setValueAtTime(vol, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    o.connect(g).connect(ctx.destination); o.start(); o.stop(ctx.currentTime + dur);
+  }
+  return {
+    ensure,
+    toggle() { muted = !muted; if (humGain) humGain.gain.value = 0; return muted; },
+    hum(level) { if (out() && humGain) { humGain.gain.setTargetAtTime(level * 0.12, ctx.currentTime, 0.05); humOsc.frequency.setTargetAtTime(60 + level * 90, ctx.currentTime, 0.05); } },
+    fire(c) { noise(0.35, 2500, 300, 0.35 + c * 0.3, 'bandpass'); tone(0.3, 300, 80, 0.2); },
+    enemyCast() { tone(0.5, 900, 200, 0.12, 'triangle'); noise(0.4, 4000, 800, 0.12, 'highpass'); },
+    boom(s) { noise(0.6, 900, 60, Math.min(0.8, 0.4 * s + 0.2)); tone(0.4, 120, 40, 0.3); },
+    block() { tone(0.25, 1400, 700, 0.18, 'triangle'); noise(0.2, 6000, 2000, 0.1, 'highpass'); },
+    hurt() { tone(0.35, 220, 70, 0.3, 'square'); noise(0.3, 1200, 200, 0.3); }
+  };
+})();
+
+// ======================================================================
+// Game flow
+// ======================================================================
+let clock = 0;
+function resetRound() {
+  enemy.hp = 100; player.hp = 100; player.hits = 0; player.blocks = 0; player.start = clock;
+  enemy.castT = 3; enemy.charging = 0; enemy.g.position.x = 0; enemy.targetX = 0;
+  handsVis.forEach(h => { h.charge = 0; h.cool = 0.5; });
+  while (bolts.length) removeBolt(0);
+  setBars();
+}
+function showHud(on) {
+  $('hudTop').hidden = !on; $('hudBottom').hidden = !on;
+  $('shieldBtn').hidden = !(on && input === 'touch');
+  $('camPreview').hidden = !(on && input === 'camera' && $('camBtn').getAttribute('aria-pressed') === 'true');
+  $('camBtn').hidden = input !== 'camera';
+}
+function play() {
+  mode = 'play';
+  document.activeElement?.blur();
+  $('menu').hidden = true; $('over').hidden = true;
+  resetRound(); showHud(true);
+  navigator.wakeLock?.request('screen').catch(() => {});
+}
+function endGame(win) {
+  if (mode !== 'play') return;
+  mode = 'over';
+  const t = Math.round(clock - player.start);
+  $('resultText').textContent = win ? 'ชนะแล้ว!' : 'พ่ายแพ้';
+  $('resultText').className = 'result ' + (win ? 'win' : 'lose');
+  $('statTime').textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+  $('statHits').textContent = player.hits;
+  $('statBlocks').textContent = player.blocks;
+  if (win) { explode(enemyChest(), 0xe04bff, 3); enemy.g.visible = false; setTimeout(() => enemy.g.visible = true, 1200); }
+  setTimeout(() => { $('over').hidden = false; }, 900);
+}
+
+$('startCam').onclick = async () => {
+  sfx.ensure();
+  input = 'camera';
+  $('startCam').disabled = true;
+  try { await startCamera(); $('menuStatus').textContent = ''; play(); }
+  catch (e) {
+    console.error(e);
+    const msg = e?.name === 'NotAllowedError' ? 'ไม่ได้รับอนุญาตให้ใช้กล้อง กดอนุญาตในเบราว์เซอร์แล้วลองใหม่ หรือเล่นแบบแตะจอ'
+      : e?.name === 'NotFoundError' ? 'ไม่พบกล้องในเครื่องนี้ ลองเล่นแบบแตะจอ'
+      : 'เปิดกล้องหรือโหลดตัวจับมือไม่สำเร็จ: ' + (e?.message || e);
+    $('menuStatus').textContent = msg;
+  }
+  $('startCam').disabled = false;
+};
+$('startTouch').onclick = () => { sfx.ensure(); input = 'touch'; play(); };
+$('again').onclick = play;
+$('toMenu').onclick = () => { mode = 'menu'; $('over').hidden = true; $('menu').hidden = false; showHud(false); };
+$('camBtn').onclick = () => {
+  const on = $('camBtn').getAttribute('aria-pressed') !== 'true';
+  $('camBtn').setAttribute('aria-pressed', on); $('camPreview').hidden = !on;
+};
+$('muteBtn').onclick = () => { $('muteBtn').setAttribute('aria-pressed', sfx.toggle()); };
+
+// touch: hold anywhere to charge, lift to throw toward where you touched
+const canvas = $('game');
+canvas.addEventListener('pointerdown', e => { if (mode === 'play' && input === 'touch') { touch.charging = true; touch.aimX = (e.clientX / innerWidth) * 2 - 1; } });
+canvas.addEventListener('pointermove', e => { if (touch.charging) touch.aimX = (e.clientX / innerWidth) * 2 - 1; });
+const release = () => { if (touch.charging) { touch.charging = false; const h = handsVis[1]; if (h.charge > 0.12) firePlayer(h); } };
+canvas.addEventListener('pointerup', release); canvas.addEventListener('pointercancel', release);
+const sb = $('shieldBtn');
+sb.addEventListener('pointerdown', e => { e.preventDefault(); touch.shield = true; });
+['pointerup', 'pointerleave', 'pointercancel'].forEach(t => sb.addEventListener(t, () => touch.shield = false));
+addEventListener('keydown', e => {
+  if (mode !== 'play' || input !== 'touch' || e.repeat) return;
+  if (e.code === 'Space') { touch.charging = true; touch.aimX = enemy.g.position.x / 9; e.preventDefault(); }
+  if (e.code === 'KeyS') touch.shield = true;
+});
+addEventListener('keyup', e => { if (e.code === 'Space') { e.preventDefault(); release(); } if (e.code === 'KeyS') touch.shield = false; });
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.fov = camera.aspect < 1 ? 75 : 60;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+let last = performance.now();
+function frame(t) {
+  const dt = Math.min(0.05, (t - last) / 1000); last = t; clock += dt;
+  if (mode === 'play' && input === 'camera') updateTrackedHands(dt);
+  else if (mode === 'play' && input === 'touch') updateVirtualHands();
+  else handsVis.forEach(h => h.have = false);
+  if (mode === 'play' && input === 'touch') {
+    // in touch mode the right hand charges directly
+    const h = handsVis[1];
+    if (touch.charging) h.charge = Math.min(1, h.charge + dt / 1.5);
+  }
+  if (mode !== 'menu') updatePlayer(dt); else { handsVis.forEach(h => h.orb.visible = false); sfx.hum(0); }
+  handsVis.forEach(drawHand);
+  updateEnemy(dt);
+  updateBolts(dt);
+  updateParticles(dt);
+  // embers drift up
+  const ep = embers.geometry.attributes.position;
+  for (let i = 0; i < ep.count; i++) { let y = ep.getY(i) + dt * 0.4; if (y > 10) y = 0; ep.setY(i, y); }
+  ep.needsUpdate = true;
+  // camera: slow idle sway in the menu, shake on hit
+  player.shake = Math.max(0, player.shake - dt);
+  camera.position.copy(CAM_BASE);
+  if (mode === 'menu') camera.position.x = Math.sin(clock * 0.2) * 0.6;
+  if (player.shake > 0) camera.position.add(new THREE.Vector3(rand(-1, 1), rand(-1, 1), 0).multiplyScalar(player.shake * 0.12));
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+setBars();
+requestAnimationFrame(frame);
+window.__game = { enemy, player, handsVis, bolts, touch, get mode() { return mode; } };
+</script>
+</body>
+</html>
