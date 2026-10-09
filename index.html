@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <title>Hand Mage</title>
 <meta name="description" content="ร่ายเวทด้วยมือจริงผ่านกล้อง: หงายมือชาร์จลูกไฟ ผลักมือเพื่อยิงใส่จอมเวทศัตรู">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hand Mage">
+<meta name="theme-color" content="#0d0a18">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Kanit:wght@300;400;600&display=swap">
@@ -74,6 +81,8 @@ button:focus-visible{outline:2px solid var(--ward);outline-offset:3px}
 .btn{padding:12px 22px;border-radius:10px;font-weight:600;font-size:1rem}
 .btn.primary{background:linear-gradient(180deg,#ffa25e,#e2621f);color:#1a0b02;box-shadow:0 6px 24px rgba(255,138,61,.35)}
 .btn.ghost{border:1px solid var(--line);color:var(--ink);background:var(--glass)}
+.ios-tip{margin:0;font-size:.85rem;line-height:1.6;color:var(--ink);background:rgba(95,227,255,.1);border:1px solid rgba(95,227,255,.35);border-radius:10px;padding:10px 14px}
+.ios-tip b{color:var(--ward)}
 .tips{font-size:.8rem;color:var(--mist);line-height:1.6;margin:0}
 .status{font-size:.9rem;color:#ffc56b;min-height:1.2em;margin:0}
 .result{font-family:var(--display);font-size:clamp(2.2rem,9vw,3.4rem);margin:0;letter-spacing:.06em}
@@ -98,6 +107,7 @@ button:focus-visible{outline:2px solid var(--ward);outline-offset:3px}
   <div class="side r">
     <button class="icon-btn" id="camBtn" aria-pressed="true">กล้อง</button>
     <button class="icon-btn" id="muteBtn" aria-pressed="false">เสียง</button>
+    <button class="icon-btn" id="fsBtn">เต็มจอ</button>
   </div>
 </div>
 
@@ -138,6 +148,7 @@ button:focus-visible{outline:2px solid var(--ward);outline-offset:3px}
       <button class="btn ghost" id="startTouch">เล่นแบบแตะจอ</button>
     </div>
     <p class="status" id="menuStatus"></p>
+    <p class="ios-tip" id="iosTip" hidden>เล่นแบบเต็มจอบน iPhone: กดปุ่มแชร์ <b>⬆</b> ใน Safari → <b>เพิ่มไปยังหน้าจอโฮม</b> แล้วเปิดเกมจากไอคอน Hand Mage</p>
     <p class="tips">ตั้งมือถือแนวนอนห่างตัวประมาณ 1 เมตร ให้กล้องหน้าเห็นมือทั้งสองข้าง และเปิดไฟให้สว่าง<br>ภาพจากกล้องประมวลผลในเครื่องคุณเท่านั้น ไม่ถูกส่งไปที่ไหน</p>
   </div>
 </div>
@@ -170,8 +181,10 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const renderer = new THREE.WebGLRenderer({ canvas: $('game'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.35;
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x1b1030, 0.028);
+scene.fog = new THREE.FogExp2(0x4a3260, 0.016);
 const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 200);
 const CAM_BASE = new THREE.Vector3(0, 1.6, 0);
 camera.position.copy(CAM_BASE);
@@ -183,19 +196,20 @@ scene.add(camera);
   const g = new THREE.SphereGeometry(120, 32, 16);
   const m = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: { top: { value: new THREE.Color(0x0b0820) }, mid: { value: new THREE.Color(0x3a1747) }, low: { value: new THREE.Color(0xc4502a) } },
+    uniforms: { top: { value: new THREE.Color(0x24306e) }, mid: { value: new THREE.Color(0x7a4486) }, low: { value: new THREE.Color(0xff9a5a) } },
     vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
     fragmentShader: 'uniform vec3 top; uniform vec3 mid; uniform vec3 low; varying vec3 vP; void main(){ float h = vP.y; vec3 c = h > 0.08 ? mix(mid, top, smoothstep(0.08, 0.6, h)) : mix(low, mid, smoothstep(-0.05, 0.08, h)); gl_FragColor = vec4(c,1.0); }'
   });
   scene.add(new THREE.Mesh(g, m));
 }
-scene.add(new THREE.HemisphereLight(0x8a7cff, 0x2a120a, 0.75));
-const sun = new THREE.DirectionalLight(0xffa36b, 1.1);
-sun.position.set(-6, 8, -30);
+scene.add(new THREE.HemisphereLight(0xb8b0ff, 0x6a4030, 1.8));
+scene.add(new THREE.AmbientLight(0x6a5a8a, 0.6));
+const sun = new THREE.DirectionalLight(0xffb98a, 2.4);
+sun.position.set(-8, 12, 10);
 scene.add(sun);
 
 // ground + rune circle under the enemy
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), new THREE.MeshStandardMaterial({ color: 0x241a33, roughness: 1 }));
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), new THREE.MeshStandardMaterial({ color: 0x5a4a6e, roughness: 1 }));
 ground.rotation.x = -Math.PI / 2;
 scene.add(ground);
 const ENEMY_Z = -22;
@@ -219,7 +233,7 @@ scene.add(rune);
 
 // broken pillars for depth
 {
-  const mat = new THREE.MeshStandardMaterial({ color: 0x3b2f4d, roughness: 0.9 });
+  const mat = new THREE.MeshStandardMaterial({ color: 0x7a6a8e, roughness: 0.9 });
   const spots = [[-9, -8], [9, -10], [-11, -18], [11, -20], [-8, -30], [8, -32], [-14, -40], [14, -42], [-5, -45], [5, -48]];
   spots.forEach(([x, z], i) => {
     const h = 2 + (i * 37 % 5);
@@ -285,7 +299,7 @@ function updateParticles(dt) {
 // ======================================================================
 const enemy = (() => {
   const g = new THREE.Group();
-  const robeMat = new THREE.MeshStandardMaterial({ color: 0x2b1640, roughness: 0.8, emissive: 0x000000 });
+  const robeMat = new THREE.MeshStandardMaterial({ color: 0x5a2c80, roughness: 0.7, emissive: 0x000000 });
   const robe = new THREE.Mesh(new THREE.ConeGeometry(0.75, 2.1, 14), robeMat); robe.position.y = 1.05; g.add(robe);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 16, 12), new THREE.MeshStandardMaterial({ color: 0x120a1c })); head.position.y = 2.2; g.add(head);
   const hood = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.75, 14), robeMat); hood.position.y = 2.42; g.add(hood);
@@ -296,6 +310,7 @@ const enemy = (() => {
   const orb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 12), new THREE.MeshBasicMaterial({ color: 0xff7af0 })); orb.position.set(0.7, 2.68, 0.1); g.add(orb);
   const orbGlow = glow(0xe04bff, 1.2); orbGlow.position.copy(orb.position); g.add(orbGlow);
   const light = new THREE.PointLight(0xe04bff, 2, 8); light.position.copy(orb.position); g.add(light);
+  const key = new THREE.PointLight(0xffd6b0, 6, 14); key.position.set(0, 3, 4); g.add(key);
   g.position.set(0, 0, ENEMY_Z);
   scene.add(g);
   return { g, robeMat, orb, orbGlow, eyeGlow, light, hp: 100, targetX: 0, moveT: 0, castT: 3, charging: 0, flash: 0, bob: 0 };
@@ -356,7 +371,7 @@ function drawHand(h) {
   h.palm.geometry.attributes.position.needsUpdate = true;
   h.palm.geometry.computeBoundingSphere();
   palmCenter(h, h.aura.position);
-  h.aura.scale.setScalar(r * 2.2);
+  h.aura.scale.setScalar(r * 1.4);
 }
 function palmCenter(h, out) {
   out.set(0, 0, 0);
@@ -780,6 +795,7 @@ function endGame(win) {
 
 $('startCam').onclick = async () => {
   sfx.ensure();
+  if (canFs && !document.fullscreenElement) document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
   input = 'camera';
   $('startCam').disabled = true;
   try { await startCamera(); $('menuStatus').textContent = ''; play(); }
@@ -792,13 +808,23 @@ $('startCam').onclick = async () => {
   }
   $('startCam').disabled = false;
 };
-$('startTouch').onclick = () => { sfx.ensure(); input = 'touch'; play(); };
+$('startTouch').onclick = () => { sfx.ensure(); if (canFs && !document.fullscreenElement) document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {}); input = 'touch'; play(); };
 $('again').onclick = play;
 $('toMenu').onclick = () => { mode = 'menu'; $('over').hidden = true; $('menu').hidden = false; showHud(false); };
 $('camBtn').onclick = () => {
   const on = $('camBtn').getAttribute('aria-pressed') !== 'true';
   $('camBtn').setAttribute('aria-pressed', on); $('camPreview').hidden = !on;
 };
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const standalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone;
+const canFs = !!document.documentElement.requestFullscreen;
+if (isIOS && !standalone) $('iosTip').hidden = false;
+$('fsBtn').hidden = standalone || (!canFs && !isIOS);
+async function goFullscreen() {
+  if (!canFs) { $('fsBtn').textContent = 'ดูวิธีเต็มจอ'; mode = 'menu'; $('menu').hidden = false; showHud(false); $('iosTip').scrollIntoView?.({ block: 'center' }); return; }
+  try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); } catch {}
+}
+$('fsBtn').onclick = goFullscreen;
 $('muteBtn').onclick = () => { $('muteBtn').setAttribute('aria-pressed', sfx.toggle()); };
 
 // touch: hold anywhere to charge, lift to throw toward where you touched
