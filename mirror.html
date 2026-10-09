@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Mirror Mage</title>
+<meta name="description" content="โหมดกระจก: ทำสามเหลี่ยมด้วยมือเพื่อปลุกพลัง ประกายไฟ สายฟ้า และแสงวิ่งรอบตัว">
+<link rel="manifest" href="mirror.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mirror Mage">
+<meta name="theme-color" content="#07060d">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Kanit:wght@300;400;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: the mirrored camera fills the screen edge to edge; one status pill floats top-centre; the start card sits centred over a dimmed mirror. */
+:root{
+  --void:#07060d;
+  --ink:#f6f1ff;
+  --mist:#b7aed0;
+  --ember:#ffa23d;   /* fire hand + body aura */
+  --volt:#7fdcff;    /* lightning hand */
+  --glass:rgba(14,11,26,.66);
+  --line:rgba(183,174,208,.25);
+  --display:"Cinzel","Times New Roman",serif;
+  --body:"Kanit","Noto Sans Thai","Leelawadee UI",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--void);color:var(--ink);font-family:var(--body);-webkit-user-select:none;user-select:none;touch-action:none}
+#stage{position:fixed;inset:0;width:100%;height:100%;display:block}
+video{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+button,a.btn{font:inherit;color:inherit;cursor:pointer;border:0;background:none;text-decoration:none}
+button:focus-visible,a:focus-visible{outline:2px solid var(--volt);outline-offset:3px}
+
+.top{position:fixed;left:0;right:0;top:0;display:flex;justify-content:space-between;align-items:center;gap:10px;padding-top:calc(env(safe-area-inset-top,0px) + 12px);padding-inline:max(16px,env(safe-area-inset-left,0px))}
+.pill{background:var(--glass);border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-size:.85rem;color:var(--mist);backdrop-filter:blur(8px);text-align:center}
+.pill.on{color:var(--ember);border-color:rgba(255,162,61,.6)}
+.pill.ready{color:var(--volt)}
+.small{background:var(--glass);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:.8rem;color:var(--mist);backdrop-filter:blur(8px)}
+#toast{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);font-family:var(--display);font-weight:800;font-size:clamp(2rem,9vw,3.6rem);letter-spacing:.1em;color:#fff3dc;text-shadow:0 0 18px var(--ember),0 0 42px var(--ember);pointer-events:none;opacity:0;transition:opacity .25s}
+#toast.show{opacity:1}
+
+.overlay{position:fixed;inset:0;display:grid;place-items:center;padding-inline:16px;padding-block:calc(env(safe-area-inset-top,0px) + 16px) calc(env(safe-area-inset-bottom,0px) + 16px);background:radial-gradient(ellipse at 50% 35%,rgba(7,6,13,.55),rgba(7,6,13,.92));overflow-y:auto}
+.card{width:100%;max-width:520px;display:grid;gap:18px;text-align:center}
+h1{font-family:var(--display);font-weight:800;font-size:clamp(2.4rem,10vw,3.8rem);letter-spacing:.08em;line-height:1;margin:0;background:linear-gradient(180deg,#fff,var(--volt) 55%,#3a7bff);-webkit-background-clip:text;background-clip:text;color:transparent;text-wrap:balance}
+.lede{margin:0;color:var(--mist);font-weight:300;line-height:1.6}
+.signs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.sign{background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:14px 10px;display:grid;gap:6px;justify-items:center}
+.sign svg{width:64px;height:48px}
+.sign strong{font-weight:600}
+.sign span{font-size:.8rem;color:var(--mist);line-height:1.4}
+.actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.btn{padding:12px 22px;border-radius:10px;font-weight:600}
+.btn.primary{background:linear-gradient(180deg,#9fe8ff,#3aa6e0);color:#04121c;box-shadow:0 6px 24px rgba(127,220,255,.35)}
+.btn.ghost{border:1px solid var(--line);background:var(--glass)}
+.status{margin:0;color:#ffc56b;min-height:1.2em;font-size:.9rem}
+.tips{margin:0;font-size:.8rem;color:var(--mist);line-height:1.6}
+.ios-tip{margin:0;font-size:.85rem;line-height:1.6;background:rgba(127,220,255,.1);border:1px solid rgba(127,220,255,.35);border-radius:10px;padding:10px 14px}
+.ios-tip b{color:var(--volt)}
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<video id="video" playsinline muted></video>
+
+<div class="top" id="top" hidden>
+  <a class="small" href="./">← เกม</a>
+  <span class="pill" id="state">กำลังเริ่ม…</span>
+  <button class="small" id="fsBtn">เต็มจอ</button>
+</div>
+<div id="toast"></div>
+
+<div class="overlay" id="intro">
+  <div class="card">
+    <h1>MIRROR MAGE</h1>
+    <p class="lede">ยืนหน้ากล้องให้เห็นทั้งตัว แล้วใช้นิ้วสร้างสามเหลี่ยมเพื่อปลุกพลัง มือซ้ายเป็นประกายไฟ มือขวาเป็นสายฟ้า และมีแสงวิ่งรอบตัวคุณ</p>
+    <div class="signs">
+      <div class="sign">
+        <svg viewBox="0 0 64 48" fill="none" stroke-width="3" stroke-linecap="round"><path d="M32 6L10 42" stroke="#7fdcff"/><path d="M32 6l22 36" stroke="#ffa23d"/><path d="M10 42h44" stroke="#f6f1ff"/></svg>
+        <strong>▲ ปลุกพลัง</strong><span>ปลายนิ้วชี้ชนกันด้านบน นิ้วโป้งชนกันด้านล่าง ค้างไว้ครู่หนึ่ง</span>
+      </div>
+      <div class="sign">
+        <svg viewBox="0 0 64 48" fill="none" stroke-width="3" stroke-linecap="round"><path d="M10 6h44" stroke="#f6f1ff"/><path d="M10 6l22 36" stroke="#7fdcff"/><path d="M54 6L32 42" stroke="#ffa23d"/></svg>
+        <strong>▼ สลายพลัง</strong><span>คว่ำสามเหลี่ยมลง นิ้วโป้งอยู่ด้านบน นิ้วชี้อยู่ด้านล่าง</span>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="go">เปิดกล้อง</button>
+      <a class="btn ghost" href="./">กลับไปเกม</a>
+    </div>
+    <p class="status" id="status"></p>
+    <p class="ios-tip" id="iosTip" hidden>เต็มจอบน iPhone: กดแชร์ <b>⬆</b> ใน Safari → <b>เพิ่มไปยังหน้าจอโฮม</b> แล้วเปิดจากไอคอน Mirror Mage</p>
+    <p class="tips">ตั้งมือถือห่างตัวประมาณ 1.5–2 เมตร ให้กล้องหน้าเห็นตั้งแต่หัวถึงเอว เปิดไฟให้สว่าง<br>ภาพจากกล้องประมวลผลในเครื่องคุณเท่านั้น</p>
+  </div>
+</div>
+
+<script>
+(() => {
+const HANDS_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/';
+const SEG_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/';
+const $ = id => document.getElementById(id);
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const TIPS = [4, 8, 12, 16, 20];
+
+const canvas = $('stage'), ctx = canvas.getContext('2d');
+const video = $('video');
+let W = 0, H = 0, DPR = 1;
+// offscreen layers: glow silhouette (half res) and cut-out person (full res)
+const glowC = document.createElement('canvas'), glowX = glowC.getContext('2d');
+const personC = document.createElement('canvas'), personX = personC.getContext('2d');
+const maskC = document.createElement('canvas'), maskX = maskC.getContext('2d');
+
+function resize() {
+  DPR = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  glowC.width = Math.ceil(W / 2); glowC.height = Math.ceil(H / 2);
+  personC.width = W; personC.height = H;
+}
+addEventListener('resize', resize); resize();
+
+// ---------------------------------------------------------------- camera + models
+let hands = null, seg = null, running = false, paused = false;
+let handRes = [], maskReady = false;
+function loadScript(src) {
+  return new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.crossOrigin = 'anonymous'; s.onload = ok; s.onerror = () => fail(new Error('โหลดไม่ได้: ' + src)); document.head.appendChild(s); });
+}
+async function start() {
+  const st = $('status');
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error('เบราว์เซอร์นี้เปิดกล้องไม่ได้');
+  st.textContent = 'กำลังขอใช้กล้อง…';
+  video.srcObject = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } });
+  await video.play();
+  st.textContent = 'กำลังโหลดตัวจับมือและตัวแยกร่าง (ครั้งแรกประมาณ 15 MB)…';
+  await Promise.all([window.Hands ? 0 : loadScript(HANDS_BASE + 'hands.js'), window.SelfieSegmentation ? 0 : loadScript(SEG_BASE + 'selfie_segmentation.js')]);
+  hands = new Hands({ locateFile: f => HANDS_BASE + f });
+  hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.5, selfieMode: true });
+  hands.onResults(onHands);
+  seg = new SelfieSegmentation({ locateFile: f => SEG_BASE + f });
+  seg.setOptions({ modelSelection: 1, selfieMode: true });
+  seg.onResults(r => {
+    const m = r.segmentationMask;
+    if (maskC.width !== m.width) { maskC.width = m.width; maskC.height = m.height; }
+    maskX.clearRect(0, 0, maskC.width, maskC.height);
+    maskX.drawImage(m, 0, 0);
+    maskReady = true;
+  });
+  // the two legacy solutions share a global wasm loader, so they must start one after another
+  await hands.initialize();
+  await seg.initialize();
+  running = true;
+  loop();
+}
+let tick = 0;
+async function loop() {
+  if (!running) return;
+  if (video.readyState >= 2 && !paused) {
+    try {
+      await hands.send({ image: video });
+      if (tick++ % 2 === 0) await seg.send({ image: video });
+    } catch (e) { console.warn(e); }
+  }
+  requestAnimationFrame(loop);
+}
+
+// ---------------------------------------------------------------- hand state
+const HANDS = { Left: mkHand('fire'), Right: mkHand('volt') };
+function mkHand(kind) { return { kind, pts: null, prev: null, seen: 0, palm: 60 }; }
+let cover = { s: 1, dx: 0, dy: 0, w: 1, h: 1 };
+function updateCover() {
+  const vw = video.videoWidth || 1280, vh = video.videoHeight || 720;
+  const s = Math.max(W / vw, H / vh);
+  cover = { s, w: vw * s, h: vh * s, dx: (W - vw * s) / 2, dy: (H - vh * s) / 2 };
+}
+const toPx = p => ({ x: cover.dx + p.x * cover.w, y: cover.dy + p.y * cover.h });
+
+function onHands(r) {
+  const seen = new Set();
+  (r.multiHandLandmarks || []).forEach((lm, i) => {
+    const label = r.multiHandedness?.[i]?.label === 'Left' ? 'Left' : 'Right';
+    const h = HANDS[seen.has(label) ? (label === 'Left' ? 'Right' : 'Left') : label];
+    seen.add(h === HANDS.Left ? 'Left' : 'Right');
+    const px = lm.map(toPx);
+    h.prev = h.pts;
+    h.pts = h.pts ? px.map((p, k) => ({ x: h.pts[k].x + (p.x - h.pts[k].x) * 0.65, y: h.pts[k].y + (p.y - h.pts[k].y) * 0.65 })) : px;
+    h.seen = performance.now();
+    h.palm = dist(h.pts[0], h.pts[9]);
+  });
+}
+const live = h => h.pts && performance.now() - h.seen < 500;
+
+// ---------------------------------------------------------------- gestures
+let active = false, power = 0;
+const gest = { kind: null, hold: 0, armed: true, center: null, pts: null };
+function readGesture(dt) {
+  const L = HANDS.Left, R = HANDS.Right;
+  gest.kind = null;
+  // a dropped frame shouldn't wipe progress: let the hold drain instead of resetting
+  const drain = () => { gest.hold = Math.max(0, gest.hold - dt * 1.5); if (gest.hold === 0) gest.armed = true; };
+  if (!live(L) || !live(R)) { drain(); return; }
+  const palm = (L.palm + R.palm) / 2;
+  const iL = L.pts[8], iR = R.pts[8], tL = L.pts[4], tR = R.pts[4];
+  const touchIdx = dist(iL, iR) < palm * 0.6, touchTh = dist(tL, tR) < palm * 0.6;
+  if (touchIdx && touchTh) {
+    const iy = (iL.y + iR.y) / 2, ty = (tL.y + tR.y) / 2;
+    if (ty > iy + palm * 0.3) gest.kind = 'up';      // thumbs below index tips: ▲
+    else if (ty < iy - palm * 0.3) gest.kind = 'down'; // thumbs above: ▼
+  }
+  if (!gest.kind) { drain(); return; }
+  gest.pts = [{ x: (iL.x + iR.x) / 2, y: (iL.y + iR.y) / 2 }, tL, tR];
+  gest.center = { x: (gest.pts[0].x + tL.x + tR.x) / 3, y: (gest.pts[0].y + tL.y + tR.y) / 3 };
+  const wanted = gest.kind === 'up' ? !active : active;
+  if (!wanted || !gest.armed) { gest.hold = 0; return; }
+  gest.hold += dt;
+  if (gest.hold >= 0.45) {
+    gest.armed = false; gest.hold = 0;
+    active = gest.kind === 'up';
+    if (active) { flash(gest.center, '#ffd08a'); toast('AWAKEN'); }
+    else { flash(gest.center, '#9fe8ff'); toast('RELEASE'); }
+  }
+}
+let toastT = null;
+function toast(t) {
+  const el = $('toast'); el.textContent = t; el.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 900);
+}
+
+// ---------------------------------------------------------------- particles
+const sparks = [], rings = [];
+function flash(c, color) { rings.push({ x: c.x, y: c.y, r: 10, life: 0.8, color }); for (let i = 0; i < 80; i++) { const a = rand(0, Math.PI * 2), v = rand(150, 700); sparks.push({ x: c.x, y: c.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rand(0.4, 0.9), max: 0.9, hue: rand(25, 55), g: 300, w: 2 }); } }
+function updateSparks(dt) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const p = sparks[i];
+    p.life -= dt;
+    if (p.life <= 0) { sparks.splice(i, 1); continue; }
+    p.vy += p.g * dt; p.vx *= 1 - dt * 1.2; p.vy *= 1 - dt * 0.6;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    const k = p.life / p.max;
+    ctx.strokeStyle = `hsla(${p.hue},100%,${55 + 30 * k}%,${Math.min(1, k * 1.4)})`;
+    ctx.lineWidth = p.w * (0.5 + k);
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.025, p.y - p.vy * 0.025); ctx.stroke();
+  }
+  for (let i = rings.length - 1; i >= 0; i--) {
+    const r = rings[i]; r.life -= dt; r.r += dt * 900;
+    if (r.life <= 0) { rings.splice(i, 1); continue; }
+    ctx.globalAlpha = r.life; ctx.strokeStyle = r.color; ctx.lineWidth = 6 * r.life;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.restore();
+  if (sparks.length > 2500) sparks.splice(0, sparks.length - 2500);
+}
+
+// ---------------------------------------------------------------- body aura (light running up the outline)
+function drawAura(t) {
+  if (!maskReady || power < 0.02) return;
+  const gw = glowC.width, gh = glowC.height;
+  glowX.globalCompositeOperation = 'source-over';
+  glowX.clearRect(0, 0, gw, gh);
+  glowX.drawImage(maskC, cover.dx / 2, cover.dy / 2, cover.w / 2, cover.h / 2);
+  glowX.globalCompositeOperation = 'source-in';
+  // three bright bands that climb from feet to head on a loop
+  const stops = [];
+  const base = `rgba(255,170,70,${0.35 * power})`;
+  for (let k = 0; k < 3; k++) {
+    const p = 1 - ((t * 0.45 + k / 3) % 1);
+    stops.push([clamp(p - 0.09, 0, 1), base], [clamp(p, 0, 1), `rgba(255,240,200,${power})`], [clamp(p + 0.09, 0, 1), base]);
+  }
+  stops.sort((a, b) => a[0] - b[0]);
+  const g = glowX.createLinearGradient(0, 0, 0, gh);
+  g.addColorStop(0, base); stops.forEach(([p, c]) => g.addColorStop(p, c)); g.addColorStop(1, base);
+  glowX.fillStyle = g; glowX.fillRect(0, 0, gw, gh);
+  // blur via shadow (works on every browser): draw off-screen, keep only the shadow
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const off = W * 3;
+  [[34, 'rgba(255,150,50,1)'], [12, 'rgba(255,230,170,1)']].forEach(([blur, col]) => {
+    ctx.shadowColor = col; ctx.shadowBlur = blur; ctx.shadowOffsetX = off;
+    ctx.drawImage(glowC, -off, 0, W, H);
+  });
+  ctx.restore();
+  // put the person back on top so the light hugs the edge instead of tinting the body
+  personX.globalCompositeOperation = 'source-over';
+  personX.clearRect(0, 0, W, H);
+  personX.save(); personX.translate(W, 0); personX.scale(-1, 1);
+  personX.drawImage(video, cover.dx, cover.dy, cover.w, cover.h);
+  personX.restore();
+  personX.globalCompositeOperation = 'destination-in';
+  personX.drawImage(maskC, cover.dx, cover.dy, cover.w, cover.h);
+  ctx.globalAlpha = Math.min(1, power * 1.5);
+  ctx.drawImage(personC, 0, 0);
+  ctx.globalAlpha = 1;
+}
+
+// ---------------------------------------------------------------- fire hand: sparks + HUD rings
+function drawFire(h, dt, t) {
+  const P = h.pts, palm = h.palm, a = power;
+  TIPS.forEach((ti, n) => {
+    const p = P[ti], q = h.prev ? h.prev[ti] : p;
+    const vx = (p.x - q.x) / Math.max(dt, 0.016), vy = (p.y - q.y) / Math.max(dt, 0.016);
+    const count = Math.round(5 * a);
+    for (let i = 0; i < count; i++) sparks.push({ x: p.x + rand(-3, 3), y: p.y + rand(-3, 3), vx: vx * 0.25 + rand(-70, 70), vy: vy * 0.25 + rand(-140, 30), life: rand(0.35, 0.95), max: 0.95, hue: rand(22, 50), g: 420, w: 1.6 });
+  });
+  ctx.save();
+  ctx.globalAlpha = a;
+  // palm ring with rotating ticks
+  const c = { x: (P[0].x + P[9].x) / 2, y: (P[0].y + P[9].y) / 2 };
+  const R = palm * 1.05;
+  ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(c.x, c.y, R, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([4, 7]); ctx.lineDashOffset = -t * 40;
+  ctx.beginPath(); ctx.arc(c.x, c.y, R * 0.72, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,200,120,.9)';
+  ctx.beginPath(); ctx.arc(c.x, c.y, R * 0.88, t * 1.6, t * 1.6 + 1.1); ctx.stroke();
+  ctx.beginPath(); ctx.arc(c.x, c.y, R * 0.88, t * 1.6 + Math.PI, t * 1.6 + Math.PI + 0.6); ctx.stroke();
+  const core = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, R * 0.5);
+  core.addColorStop(0, 'rgba(255,230,180,.9)'); core.addColorStop(1, 'rgba(255,140,40,0)');
+  ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = core;
+  ctx.beginPath(); ctx.arc(c.x, c.y, R * 0.5, 0, Math.PI * 2); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  // fingertip rings + readout tags
+  ctx.font = `500 ${clamp(palm * 0.16, 9, 13)}px "JetBrains Mono", ui-monospace, monospace`;
+  ctx.textBaseline = 'middle';
+  TIPS.forEach(ti => {
+    const p = P[ti], r = clamp(palm * 0.13, 5, 14);
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(p.x, p.y, r * 0.35, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+    const val = (dist(p, P[0]) / palm).toFixed(2);
+    const tw = ctx.measureText(val).width + 8, th = r * 1.5;
+    const bx = p.x - r - 14 - tw, by = p.y - th / 2;
+    ctx.beginPath(); ctx.moveTo(p.x - r, p.y); ctx.lineTo(bx + tw, p.y); ctx.stroke();
+    ctx.strokeRect(bx, by, tw, th);
+    ctx.fillStyle = 'rgba(255,255,255,.95)'; ctx.fillText(val, bx + 4, p.y + 0.5);
+  });
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- lightning hand: arcs + aura
+let boltCache = [], boltT = 0;
+function jag(a, b, depth, disp, out) {
+  if (depth === 0) { out.push(b); return; }
+  const m = { x: (a.x + b.x) / 2 + rand(-disp, disp), y: (a.y + b.y) / 2 + rand(-disp, disp) };
+  jag(a, m, depth - 1, disp / 2, out); jag(m, b, depth - 1, disp / 2, out);
+}
+function bolt(a, b) { const pts = [a]; jag(a, b, 5, dist(a, b) * 0.28, pts); return pts; }
+function drawVolt(h, dt, t) {
+  const P = h.pts, palm = h.palm, a = power;
+  const c = { x: (P[0].x + P[9].x) / 2, y: (P[0].y + P[9].y) / 2 };
+  // aura
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const flick = 0.75 + Math.random() * 0.25;
+  const aura = ctx.createRadialGradient(c.x, c.y, palm * 0.2, c.x, c.y, palm * 2);
+  aura.addColorStop(0, `rgba(140,120,255,${0.45 * a * flick})`); aura.addColorStop(0.5, `rgba(90,200,255,${0.22 * a * flick})`); aura.addColorStop(1, 'rgba(60,120,255,0)');
+  ctx.fillStyle = aura; ctx.beginPath(); ctx.arc(c.x, c.y, palm * 2, 0, Math.PI * 2); ctx.fill();
+  // regenerate arcs a few times per second so they crackle
+  boltT -= dt;
+  if (boltT <= 0) {
+    boltT = 0.06;
+    boltCache = [];
+    TIPS.forEach(ti => boltCache.push(bolt(c, P[ti])));
+    for (let i = 0; i < 4; i++) if (Math.random() < 0.6) boltCache.push(bolt(P[TIPS[i]], P[TIPS[i + 1]]));
+    const nOut = Math.random() < 0.7 ? 2 : 1;
+    for (let i = 0; i < nOut; i++) {
+      const s = P[TIPS[Math.floor(rand(0, 5))]], ang = rand(0, Math.PI * 2), len = palm * rand(0.6, 1.6);
+      boltCache.push(bolt(s, { x: s.x + Math.cos(ang) * len, y: s.y + Math.sin(ang) * len }));
+    }
+  }
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  boltCache.forEach((pts, i) => {
+    const hue = i % 3 === 0 ? 'rgba(190,140,255,' : 'rgba(120,210,255,';
+    ctx.shadowColor = '#7fdcff'; ctx.shadowBlur = 14;
+    ctx.strokeStyle = hue + 0.55 * a + ')'; ctx.lineWidth = 4;
+    ctx.beginPath(); pts.forEach((p, k) => k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = `rgba(255,255,255,${0.95 * a})`; ctx.lineWidth = 1.3;
+    ctx.stroke();
+  });
+  // tip glints
+  TIPS.forEach(ti => {
+    const p = P[ti], g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, palm * 0.3);
+    g.addColorStop(0, `rgba(230,250,255,${a})`); g.addColorStop(1, 'rgba(120,200,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, palm * 0.3, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- gesture guide while holding
+function drawGestureGuide() {
+  if (!gest.kind || !gest.pts || gest.hold <= 0) return;
+  const [top, a, b] = gest.pts;
+  const col = gest.kind === 'up' ? '255,200,120' : '160,230,255';
+  ctx.save();
+  ctx.strokeStyle = `rgba(${col},.9)`; ctx.lineWidth = 3; ctx.shadowColor = `rgb(${col})`; ctx.shadowBlur = 16;
+  ctx.beginPath(); ctx.moveTo(top.x, top.y); ctx.lineTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.closePath(); ctx.stroke();
+  if (gest.hold > 0) {
+    const r = 26;
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(gest.center.x, gest.center.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (gest.hold / 0.45)); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- main loop
+let last = performance.now(), clock = 0;
+function frame(now) {
+  const realDt = (now - last) / 1000, dt = Math.min(0.05, realDt); last = now; clock += dt;
+  updateCover();
+  ctx.fillStyle = '#07060d'; ctx.fillRect(0, 0, W, H);
+  if (video.readyState >= 2) {
+    ctx.save(); ctx.translate(W, 0); ctx.scale(-1, 1);
+    ctx.drawImage(video, cover.dx, cover.dy, cover.w, cover.h);
+    ctx.restore();
+  }
+  if (running) {
+    readGesture(Math.min(realDt, 0.2));
+    power += ((active ? 1 : 0) - power) * Math.min(1, dt * (active ? 1.8 : 3));
+    // dim the room slightly while powered so the effects pop
+    if (power > 0.01) { ctx.fillStyle = `rgba(5,3,15,${0.35 * power})`; ctx.fillRect(0, 0, W, H); }
+    drawAura(clock);
+    if (power > 0.02) {
+      if (live(HANDS.Left)) drawFire(HANDS.Left, dt, clock);
+      if (live(HANDS.Right)) drawVolt(HANDS.Right, dt, clock);
+    }
+    updateSparks(dt);
+    drawGestureGuide();
+    const st = $('state');
+    const nHands = [HANDS.Left, HANDS.Right].filter(live).length;
+    if (gest.kind && gest.hold > 0) { st.textContent = gest.kind === 'up' ? 'ค้างไว้… กำลังปลุกพลัง' : 'ค้างไว้… กำลังสลายพลัง'; st.className = 'pill ready'; }
+    else if (active) { st.textContent = 'พลังตื่นแล้ว · ทำ ▼ เพื่อหยุด'; st.className = 'pill on'; }
+    else if (nHands < 2) { st.textContent = `เห็นมือ ${nHands}/2 · ยกมือทั้งสองข้าง`; st.className = 'pill'; }
+    else { st.textContent = 'ทำสามเหลี่ยม ▲ เพื่อปลุกพลัง'; st.className = 'pill ready'; }
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---------------------------------------------------------------- UI
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const standalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone;
+const canFs = !!document.documentElement.requestFullscreen;
+if (isIOS && !standalone) $('iosTip').hidden = false;
+$('fsBtn').hidden = standalone || !canFs;
+$('fsBtn').onclick = () => { (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen({ navigationUI: 'hide' })).catch(() => {}); };
+$('go').onclick = async () => {
+  $('go').disabled = true;
+  if (canFs && !document.fullscreenElement) document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+  try { await start(); $('intro').hidden = true; $('top').hidden = false; $('status').textContent = ''; navigator.wakeLock?.request('screen').catch(() => {}); }
+  catch (e) {
+    console.error(e);
+    $('status').textContent = e?.name === 'NotAllowedError' ? 'ไม่ได้รับอนุญาตให้ใช้กล้อง กดอนุญาตในเบราว์เซอร์แล้วลองใหม่' : 'เริ่มไม่สำเร็จ: ' + (e?.message || e);
+  }
+  $('go').disabled = false;
+};
+// test hook: lets an automated check drive the effects without a real person
+window.__mirror = { pause: v => { paused = v; }, gest, get clock() { return clock; }, HANDS, setActive: v => { active = v; }, get power() { return power; }, onHands };
+})();
+</script>
+</body>
+</html>
